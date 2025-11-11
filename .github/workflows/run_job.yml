@@ -1,9 +1,9 @@
 name: Daily Job Fetch
 
 on:
-  workflow_dispatch:        # 👉 允許手動觸發
+  workflow_dispatch:        # 手動執行
   schedule:
-    - cron: "0 1 * * *"     # 👉 每天 UTC 01:00 執行 = 台灣早上 9 點
+    - cron: "0 1 * * *"     # 每天台灣早上 9 點（UTC+8 → UTC 1:00）
 
 jobs:
   run-script:
@@ -20,6 +20,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser chromium-chromedriver
           pip install selenium beautifulsoup4 requests
 
       - name: Run job fetch script
