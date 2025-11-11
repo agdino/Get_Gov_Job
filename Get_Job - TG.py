@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
 from bs4 import BeautifulSoup
 
 # ===== 讀取 Telegram 環境變數 =====
@@ -45,10 +46,11 @@ def fetch_job_html(keyword="統計"):
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--log-level=3")
-
-    # ✅ GitHub Actions 版本：指定 chromium 執行路徑
     options.binary_location = "/usr/bin/chromium-browser"
-    driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=options)
+
+    # ✅ 新版 Selenium 用 Service 指定 driver 路徑
+    service = Service("/usr/bin/chromedriver")
+    driver = webdriver.Chrome(service=service, options=options)
 
     wait = WebDriverWait(driver, 20)
     driver.get(url)
@@ -144,24 +146,31 @@ def parse_jobs(html: str):
 
 # ===== 主流程 =====
 def main():
-    html = fetch_job_html("統計")
-    jobs = parse_jobs(html)
+    try:
+        html = fetch_job_html("統計")
+        jobs = parse_jobs(html)
 
-    if not jobs:
-        send_telegram_message("⚠️ 今天沒有抓到任何職缺。")
-        return
+        if not jobs:
+            send_telegram_message("⚠️ 今天沒有抓到任何職缺。")
+            return
 
-    preview = jobs[:5]
-    msg_lines = ["📊 <b>今日統計職缺更新：</b>"]
-    for i, j in enumerate(preview, 1):
-        msg_lines.append(
-            f"\n<b>{i}. {j['職稱']}</b>（{j['職系']}）\n"
-            f"📍 {j['機關名稱']}｜{j['工作地點']}\n"
-            f"💼 {j['職務列等']}\n"
-            f"⏰ {j['有效期間']}"
-        )
+        preview = jobs[:5]
+        msg_lines = ["📊 <b>今日統計職缺更新：</b>"]
+        for i, j in enumerate(preview, 1):
+            msg_lines.append(
+                f"\n<b>{i}. {j['職稱']}</b>（{j['職系']}）\n"
+                f"📍 {j['機關名稱']}｜{j['工作地點']}\n"
+                f"💼 {j['職務列等']}\n"
+                f"⏰ {j['有效期間']}"
+            )
 
-    send_telegram_message("\n".join(msg_lines))
+        send_telegram_message("\n".join(msg_lines))
+
+    except Exception as e:
+        # 若執行錯誤，將錯誤內容也傳到 Telegram
+        err_msg = f"❌ 任務執行失敗：{str(e)}"
+        print(err_msg)
+        send_telegram_message(err_msg)
 
 
 if __name__ == "__main__":
