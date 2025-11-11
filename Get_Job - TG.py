@@ -12,7 +12,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from bs4 import BeautifulSoup
 
-# ===== 讀取 Telegram 環境變數 =====
+# ===== Telegram 環境變數 =====
 BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 CHAT_ID = os.getenv("TG_CHAT_ID")
 
@@ -22,11 +22,7 @@ def send_telegram_message(text: str):
         print("❌ 缺少 TG_BOT_TOKEN 或 TG_CHAT_ID")
         return
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML"
-    }
+    payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
     try:
         requests.post(url, data=payload)
         print("✅ 已發送 Telegram 通知。")
@@ -40,27 +36,41 @@ def fetch_job_html(keyword="統計"):
     url = "https://web3.dgpa.gov.tw/want03front/AP/WANTF00001.ASPX"
 
     options = webdriver.ChromeOptions()
+    options.binary_location = "/usr/bin/chromium-browser"
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-features=VizDisplayCompositor")
+    options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument("--log-level=3")
-    options.binary_location = "/usr/bin/chromium-browser"
+    options.add_argument("--ignore-certificate-errors")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-infobars")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument(
+        "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
 
-    # ✅ 新版 Selenium 用 Service 指定 driver 路徑
+    # 使用新版 Selenium Service 啟動
     service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=options)
 
-    wait = WebDriverWait(driver, 20)
-    driver.get(url)
+    wait = WebDriverWait(driver, 30)
+    driver.set_page_load_timeout(60)
 
     try:
         print("頁面載入中...")
+        driver.get(url)
         time.sleep(2)
 
-        input_box = wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, 'div#ctl00_ContentPlaceHolder1_trPerson4 input')))
+        input_box = wait.until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, 'div#ctl00_ContentPlaceHolder1_trPerson4 input')
+            )
+        )
         input_box.clear()
         input_box.send_keys(keyword)
         time.sleep(1)
@@ -75,24 +85,32 @@ def fetch_job_html(keyword="統計"):
         table_html = driver.execute_script("""
             let tables = document.querySelectorAll('table');
             for (let t of tables) {
-                if (t.innerText.includes('職稱') || t.innerText.includes('機關名稱') || t.innerText.includes('統計')) {
+                if (t.innerText.includes('職稱') || 
+                    t.innerText.includes('機關名稱') || 
+                    t.innerText.includes('統計')) {
                     return t.outerHTML;
                 }
             }
             return '';
         """)
+
         if not table_html:
             raise Exception("沒有找到職缺表格")
 
         print("✅ 已取得表格 HTML。")
         return table_html
 
+    except Exception as e:
+        print("❌ 抓取錯誤：", e)
+        raise
     finally:
         driver.quit()
 
 
 # ===== 解析與切割 =====
-TITLE_KEYWORDS = ["書記官", "科員", "助理員", "專員", "技士", "分析師", "辦事員", "技佐", "主任", "幹事"]
+TITLE_KEYWORDS = [
+    "書記官", "科員", "助理員", "專員", "技士", "分析師", "辦事員", "技佐", "主任", "幹事"
+]
 
 pattern = re.compile(
     r"""
@@ -167,7 +185,6 @@ def main():
         send_telegram_message("\n".join(msg_lines))
 
     except Exception as e:
-        # 若執行錯誤，將錯誤內容也傳到 Telegram
         err_msg = f"❌ 任務執行失敗：{str(e)}"
         print(err_msg)
         send_telegram_message(err_msg)
