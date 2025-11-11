@@ -11,21 +11,20 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
-
-# ===== Telegram 設定 =====
+# ===== 讀取 Telegram 環境變數 =====
 BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 CHAT_ID = os.getenv("TG_CHAT_ID")
 
 def send_telegram_message(text: str):
     """發送文字訊息到 Telegram"""
     if not BOT_TOKEN or not CHAT_ID:
-        print("❌ 缺少 TG_BOT_TOKEN 或 TG_CHAT_ID，請確認環境變數或 GitHub Secrets。")
+        print("❌ 缺少 TG_BOT_TOKEN 或 TG_CHAT_ID")
         return
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": CHAT_ID,
         "text": text,
-        "parse_mode": "HTML"  # 支援粗體與換行
+        "parse_mode": "HTML"
     }
     try:
         requests.post(url, data=payload)
@@ -47,7 +46,10 @@ def fetch_job_html(keyword="統計"):
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--log-level=3")
 
-    driver = webdriver.Chrome(options=options)
+    # ✅ GitHub Actions 版本：指定 chromium 執行路徑
+    options.binary_location = "/usr/bin/chromium-browser"
+    driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=options)
+
     wait = WebDriverWait(driver, 20)
     driver.get(url)
 
@@ -116,14 +118,11 @@ def parse_jobs(html: str):
     rows = soup.find_all("tr")
     print(f"🔍 共找到 {len(rows)} 列 (含表頭)")
 
-    # 若第一列是表頭則略過
     if rows and ("職稱" in rows[0].get_text() or "機關名稱" in rows[0].get_text()):
-        print("⚙️ 偵測到表頭，略過第一列。")
         rows = rows[1:]
 
-    data, unparsed = [], []
-
-    for idx, row in enumerate(rows):
+    data = []
+    for row in rows:
         line = "".join(td.get_text(strip=True) for td in row.find_all("td"))
         if not line or "共" in line:
             continue
@@ -138,30 +137,8 @@ def parse_jobs(html: str):
                 "職務列等": m.group("職務列等"),
                 "工作地點": m.group("工作地點"),
                 "有效期間": m.group("有效期間"),
-                "備註": m.group("備註").strip(),
             })
-        else:
-            # fallback 容錯
-            if "統計" in line:
-                loc_match = re.search(r"\d{1,3}-[\u4e00-\u9fa5A-Za-z0-9]+", line)
-                date_match = re.search(r"\d{3}/\d{2}/\d{2}\s*~\s*\d{3}/\d{2}/\d{2}", line)
-                title, org = split_title_and_org(line.split("[統計]")[0] + "統計")
-
-                data.append({
-                    "職稱": title,
-                    "機關名稱": org,
-                    "職系": "統計",
-                    "職務列等": "未明確解析",
-                    "工作地點": loc_match.group(0) if loc_match else "",
-                    "有效期間": date_match.group(0) if date_match else "",
-                    "備註": "",
-                })
-            else:
-                unparsed.append(line)
-
-    print(f"✅ 成功解析 {len(data)} 筆，未解析 {len(unparsed)} 筆。")
-    if unparsed:
-        print("⚠️ 未解析行：", json.dumps(unparsed, ensure_ascii=False, indent=2))
+    print(f"✅ 成功解析 {len(data)} 筆。")
     return data
 
 
@@ -184,8 +161,7 @@ def main():
             f"⏰ {j['有效期間']}"
         )
 
-    text_message = "\n".join(msg_lines)
-    send_telegram_message(text_message)
+    send_telegram_message("\n".join(msg_lines))
 
 
 if __name__ == "__main__":
