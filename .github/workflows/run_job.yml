@@ -1,9 +1,9 @@
 name: Daily Job Fetch
 
 on:
+  workflow_dispatch:        # 👉 允許手動觸發
   schedule:
-    - cron: "0 9 * * *"   # 每天 UTC 9:00 執行（台灣時間 17:00）
-  workflow_dispatch:       # 可手動觸發
+    - cron: "0 1 * * *"     # 👉 每天 UTC 01:00 執行 = 台灣早上 9 點
 
 jobs:
   run-script:
@@ -22,8 +22,8 @@ jobs:
         run: |
           pip install selenium beautifulsoup4 requests
 
-      - name: Run script
+      - name: Run job fetch script
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python Get_Job_Telegram.py
+        run: python "Get_Job - TG.py"
