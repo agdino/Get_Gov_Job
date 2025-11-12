@@ -32,11 +32,22 @@ def send_telegram_message(text: str):
 
 # ===== 抓取職缺資料 =====
 def fetch_job_html(keyword="統計"):
-    """使用 Selenium 取得職缺 HTML"""
+    """使用 Selenium 取得職缺 HTML (優化 GitHub Actions 穩定性)"""
     url = "https://web3.dgpa.gov.tw/want03front/AP/WANTF00001.ASPX"
 
     options = webdriver.ChromeOptions()
-    options.binary_location = "/usr/bin/chromium-browser"
+    
+    # 1. (關鍵) 將頁面載入策略設為 'eager'
+    # 讓 driver.get() 在 DOM 準備就緒後就返回，不等待所有資源載入
+    # 接著由 WebDriverWait 來等待我們需要的特定元素
+    options.page_load_strategy = 'eager'
+
+    # 2. (關鍵) 移除硬編碼路徑
+    # 依賴 GitHub Actions YML 中 (例如 browser-actions/setup-chrome@v1)
+    # 自動安裝並加入到 PATH 的 chromedriver 和 chromium-browser
+    # options.binary_location = "/usr/bin/chromium-browser" # 移除
+    
+    # --- 保留所有 GitHub Actions 需要的參數 ---
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -54,34 +65,54 @@ def fetch_job_html(keyword="統計"):
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
 
-    # 使用新版 Selenium Service 啟動
-    service = Service("/usr/bin/chromedriver")
-    driver = webdriver.Chrome(service=service, options=options)
+    # 3. (關鍵) 讓 Selenium 自動尋找驅動程式
+    # service = Service("/usr/bin/chromedriver") # 移除
+    # driver = webdriver.Chrome(service=service, options=options) # 舊版
+    driver = webdriver.Chrome(options=options) # 新版 (Selenium 4+)
 
-    wait = WebDriverWait(driver, 30)
+    # 4. (優化) 延長等待時間
+    # 將 WebDriverWait 延長到 60 秒，與 page_load_timeout 一致
+    # 讓元素有更充裕的時間在資源受限的環境中被載入
+    wait = WebDriverWait(driver, 60) 
     driver.set_page_load_timeout(60)
 
     try:
-        print("頁面載入中...")
+        print("頁面載入中 (Eager 策略)...")
         driver.get(url)
-        time.sleep(2)
+        # time.sleep(2) # 移除：使用 eager 策略後，應完全依賴 WebDriverWait
 
+        # 等待輸入框出現
         input_box = wait.until(
             EC.presence_of_element_located(
                 (By.CSS_SELECTOR, 'div#ctl00_ContentPlaceHolder1_trPerson4 input')
             )
         )
+        print("輸入框已載入。")
+        
         input_box.clear()
         input_box.send_keys(keyword)
-        time.sleep(1)
+        time.sleep(1) # 這裡的短暫停頓有助於模擬輸入
         input_box.send_keys(Keys.ARROW_DOWN)
         input_box.send_keys(Keys.ENTER)
         print(f"已選取『{keyword}』")
 
-        driver.find_element(By.ID, "ctl00_ContentPlaceHolder1_btnQUERY").click()
+        # 等待查詢按鈕可被點擊
+        search_button = wait.until(
+            EC.element_to_be_clickable(
+                (By.ID, "ctl00_ContentPlaceHolder1_btnQUERY")
+            )
+        )
+        search_button.click()
         print("查詢中...")
-        time.sleep(3)
-
+        
+        # 5. (優化) 點擊後等待表格出現
+        # 不使用 time.sleep(3)，而是明確等待表格標記出現
+        wait.until(
+            EC.presence_of_element_located((By.XPATH, "//table[contains(., '職稱') or contains(., '機關名稱')]"))
+        )
+        print("查詢結果表格已載入。")
+        
+        # 執行 JS 抓取表格
         table_html = driver.execute_script("""
             let tables = document.querySelectorAll('table');
             for (let t of tables) {
@@ -102,6 +133,9 @@ def fetch_job_html(keyword="統計"):
 
     except Exception as e:
         print("❌ 抓取錯誤：", e)
+        # (可選) 增加除錯資訊
+        # driver.save_screenshot("debug_screenshot.png")
+        # print(driver.page_source)
         raise
     finally:
         driver.quit()
@@ -192,3 +226,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
